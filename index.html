@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LAPS Portal</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --border: #2a2d3a;
+    --accent: #E3000B;
+    --accent-hover: #b50009;
+    --text: #e8eaf0;
+    --text-muted: #7b7f96;
+    --input-bg: #12141c;
+    --radius: 10px;
+    --danger: #ef4444;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .logo-bar { width: 5px; height: 28px; background: var(--accent); border-radius: 3px; }
+  header h1 { font-size: 1.1rem; font-weight: 600; }
+  #user-display {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-left: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 260px;
+  }
+  #logout-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    display: none;
+  }
+  #logout-btn:hover { border-color: var(--accent); color: var(--accent); }
+  main {
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px 16px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    width: 100%;
+    max-width: 500px;
+  }
+  .card h2 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
+  .card p { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 24px; }
+  label { display: block; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 6px; }
+  .input-row { display: flex; gap: 10px; }
+  input[type="text"] {
+    flex: 1;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    padding: 10px 14px;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color .2s;
+  }
+  input[type="text"]:focus { border-color: var(--accent); }
+  input[type="text"]::placeholder { color: var(--text-muted); }
+  button.primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .2s;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  button.primary:hover { background: var(--accent-hover); }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  #login-btn { width: 100%; padding: 12px; font-size: 1rem; justify-content: center; margin-top: 8px; }
+  .result-box { margin-top: 24px; display: none; }
+  .result-box.visible { display: block; }
+  .info-row {
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+  }
+  .info-row .lbl { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; }
+  .info-row .val { font-size: 1rem; font-family: 'Consolas', monospace; word-break: break-all; }
+  .copy-row { display: flex; align-items: center; gap: 8px; }
+  .copy-row .val { flex: 1; }
+  .copy-btn {
+    background: var(--border);
+    border: none;
+    color: var(--text-muted);
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.75rem;
+  }
+  .copy-btn:hover { background: var(--accent); color: #fff; }
+  .error-box {
+    margin-top: 16px;
+    background: #1e0a0a;
+    border: 1px solid #7f1d1d;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 0.85rem;
+    color: #fca5a5;
+    display: none;
+  }
+  .error-box.visible { display: block; }
+  .spinner {
+    width: 16px; height: 16px;
+    border: 2px solid #ffffff40;
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    display: none;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 480px) {
+    header { padding: 12px 16px; gap: 10px; }
+    header h1 { font-size: 1rem; }
+    #user-display { font-size: 0.7rem; max-width: 100px; }
+    .card { padding: 20px 16px; border-radius: 8px; }
+    .input-row { flex-direction: column; }
+    input[type="text"] { font-size: 1rem; padding: 12px 14px; }
+    button.primary { width: 100%; justify-content: center; padding: 12px; font-size: 1rem; }
+    .info-row .val { font-size: 0.9rem; }
+    .copy-row { flex-wrap: wrap; gap: 6px; }
+    .copy-btn { width: 100%; text-align: center; padding: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-bar"></div>
+  <h1>LAPS Portal</h1>
+  <div id="user-display"></div>
+  <button id="logout-btn" onclick="doLogout()">Sign out</button>
+</header>
+
+<main>
+  <div class="card">
+
+    <div id="search-view">
+      <h2>LAPS Password Lookup</h2>
+      <p>Enter the exact device name as it appears in Intune/Entra.</p>
+      <label>Device name</label>
+      <div class="input-row">
+        <input type="text" id="pc-input" placeholder="e.g. C330141" onkeydown="if(event.key==='Enter')doLookup()">
+        <button class="primary" id="search-btn" onclick="doLookup()">
+          <div class="spinner" id="search-spinner"></div>
+          <span id="search-label">Retrieve</span>
+        </button>
+      </div>
+      <div class="error-box" id="search-error"></div>
+      <div class="result-box" id="result-box">
+        <div class="info-row">
+          <div class="lbl">Device name</div>
+          <div class="val" id="r-device"></div>
+        </div>
+        <div class="info-row">
+          <div class="lbl">LAPS Account</div>
+          <div class="val" id="r-account"></div>
+        </div>
+        <div class="info-row">
+          <div class="lbl">LAPS Password</div>
+          <div class="copy-row">
+            <div class="val" id="r-password" style="filter:blur(4px);transition:filter .2s;user-select:none"></div>
+            <button class="copy-btn" id="toggle-btn"
+              onmousedown="showPassword()" onmouseup="hidePassword()" onmouseleave="hidePassword()"
+              ontouchstart="showPassword()" ontouchend="hidePassword()">&#128065;</button>
+            <button class="copy-btn" onclick="doCopy()">Copy</button>
+          </div>
+        </div>
+        <div class="info-row">
+          <div class="lbl">Last rotation</div>
+          <div class="val" id="r-rotation"></div>
+        </div>
+        <div class="info-row">
+          <div class="lbl">Next rotation</div>
+          <div class="val" id="r-next-rotation"></div>
+        </div>
+        <div class="error-box" id="r-expired-warning">&#9888;&#65039; This password has expired. Please rotate it as soon as possible.</div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+var FUNCTION_URL = '/proxy.php';
+
+var loggedInUpn = null;
+
+fetch('/.auth/me').then(function(r) { return r.json(); }).then(function(data) {
+  var claims = data && data[0] && data[0].user_claims;
+  var upnClaim = claims ? claims.find(function(c) { return c.typ === 'preferred_username' || c.typ === 'upn' || c.typ === 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn'; }) : null;
+  var upn = upnClaim ? upnClaim.val : (data && data[0] ? data[0].user_id : null);
+  if (upn) {
+    loggedInUpn = upn;
+    document.getElementById('user-display').textContent = upn;
+    document.getElementById('logout-btn').style.display = 'block';
+  }
+}).catch(function() {});
+
+function showPassword() {
+  var el = document.getElementById('r-password');
+  el.style.filter = 'none';
+  el.style.userSelect = 'text';
+}
+
+function hidePassword() {
+  var el = document.getElementById('r-password');
+  el.style.filter = 'blur(4px)';
+  el.style.userSelect = 'none';
+}
+
+function doLogout() {
+  window.location.href = '/.auth/logout';
+}
+
+function doLookup() {
+  var pcName = document.getElementById('pc-input').value.trim();
+  if (!pcName) return;
+  document.getElementById('result-box').classList.remove('visible');
+  errHide('search-error');
+  document.getElementById('r-expired-warning').classList.remove('visible');
+  setLoad(true);
+
+  var upn = loggedInUpn ? encodeURIComponent(loggedInUpn) : 'unknown';
+  fetch(FUNCTION_URL + '?deviceName=' + encodeURIComponent(pcName) + '&callerUpn=' + upn)
+  .then(function(r) {
+    if (r.status === 404) {
+      errShow('search-error', 'No device found or no LAPS data available.');
+      throw new Error('stop');
+    }
+    if (!r.ok) {
+      return r.json().then(function(e) { throw new Error(e.error || r.statusText); });
+    }
+    return r.json();
+  })
+  .then(function(data) {
+    hidePassword();
+    document.getElementById('r-device').textContent = data.deviceName;
+    document.getElementById('r-account').textContent = data.accountName || 'Administrator';
+    document.getElementById('r-password').textContent = data.password || '(not available)';
+    document.getElementById('r-rotation').textContent = data.backupDateTime
+      ? new Date(data.backupDateTime).toLocaleString('en-GB') : 'Unknown';
+    document.getElementById('r-next-rotation').textContent = data.refreshDateTime
+      ? new Date(data.refreshDateTime).toLocaleString('en-GB') : 'Unknown';
+    if (data.refreshDateTime && new Date(data.refreshDateTime) < new Date()) {
+      document.getElementById('r-expired-warning').classList.add('visible');
+    }
+    document.getElementById('result-box').classList.add('visible');
+  })
+  .catch(function(e) {
+    if (e.message !== 'stop') errShow('search-error', 'Error: ' + e.message);
+  })
+  .finally(function() {
+    setLoad(false);
+  });
+}
+
+function doCopy() {
+  var pw = document.getElementById('r-password').textContent;
+  navigator.clipboard.writeText(pw).then(function() {
+    var btn = document.querySelectorAll('.copy-btn')[1];
+    btn.textContent = 'Copied!';
+    setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+  });
+}
+
+function errShow(id, msg) {
+  var el = document.getElementById(id);
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+function errHide(id) { document.getElementById(id).classList.remove('visible'); }
+
+function setLoad(on) {
+  document.getElementById('search-spinner').style.display = on ? 'block' : 'none';
+  document.getElementById('search-label').textContent = on ? '...' : 'Retrieve';
+  document.getElementById('search-btn').disabled = on;
+}
+</script>
+</body>
+</html>
