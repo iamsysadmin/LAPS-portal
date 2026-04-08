@@ -251,8 +251,8 @@ Write-OK "Function URL retrieved."
 # ============================================================
 Write-Step 5 "Creating Web App"
 
-# Create the App Service Plan only if it does not exist yet
-$asp = Get-AzAppServicePlan -ResourceGroupName $ResourceGroupName -Name $AppServicePlanName -ErrorAction SilentlyContinue
+# Create the App Service Plan only if it does not exist yet (check across entire subscription)
+$asp = Get-AzAppServicePlan -Name $AppServicePlanName -ErrorAction SilentlyContinue
 if (-not $asp) {
     $asp = New-AzAppServicePlan -ResourceGroupName $ResourceGroupName `
         -Name $AppServicePlanName -Location $Region `
@@ -322,12 +322,13 @@ Invoke-WebRequest -Uri $ProxyPhpUrl  -OutFile (Join-Path $tempDir "proxy.php")  
 Compress-Archive -Path (Join-Path $tempDir "index.html"), (Join-Path $tempDir "proxy.php") `
     -DestinationPath $zipPath -Force
 
-$zipDeployUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$WebAppName/extensions/onedeploy?api-version=2022-03-01&type=zip&path=site/wwwroot"
-$zipBytes     = [System.IO.File]::ReadAllBytes($zipPath)
-Invoke-RestMethod -Uri $zipDeployUrl -Method Put `
+# Deploy files via Kudu ZIP deploy API
+$kuduZipUrl = "https://$WebAppName.scm.azurewebsites.net/api/zipdeploy"
+$kuduToken  = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$(Get-FreshToken):"))
+Invoke-RestMethod -Uri $kuduZipUrl -Method Post `
     -Headers @{ Authorization = "Bearer $(Get-FreshToken)" } `
-    -ContentType "application/octet-stream" `
-    -Body $zipBytes | Out-Null
+    -ContentType "application/zip" `
+    -InFile $zipPath | Out-Null
 
 Write-OK "index.html and proxy.php deployed to Web App."
 
@@ -441,11 +442,9 @@ Write-Host "  1. Add users to the '$AccessGroupName' group in Entra ID"
 Write-Host "  3. Check audit logs in Log Analytics (allow up to 30 min for first entry)"
 Write-Host ""
 
-# Fetch the correct Web App URL directly via REST API to get the full hostname including Azure's unique suffix
-$webAppApiUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$WebAppName?api-version=2022-03-01"
-$webAppDetails = Invoke-RestMethod -Uri $webAppApiUrl -Method Get `
-    -Headers @{ Authorization = "Bearer $(Get-FreshToken)" }
-$webAppUrl = "https://" + $webAppDetails.properties.defaultHostName
+# Fetch the correct Web App URL via PowerShell (most reliable)
+$webAppFinal = Get-AzWebApp -ResourceGroupName $ResourceGroupName -Name $WebAppName
+$webAppUrl   = "https://" + $webAppFinal.DefaultHostName
 
 # Display the portal URL prominently so it is easy to find and share
 Write-Host "======================================================" -ForegroundColor Green
