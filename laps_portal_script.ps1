@@ -224,7 +224,8 @@ $deployBody = @{
     }
 } | ConvertTo-Json -Depth 10
 
-$token      = (Get-AzAccessToken -ResourceUrl "https://management.azure.com/").Token
+$tokenObj   = Get-AzAccessToken -ResourceUrl "https://management.azure.com/"
+$token      = $tokenObj.Token
 $authHeader = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
 $funcApiUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$FunctionAppName/functions/GetLapsPassword?api-version=2022-03-01"
 
@@ -254,7 +255,9 @@ $webApp = New-AzWebApp -ResourceGroupName $ResourceGroupName `
     -Location $Region
 Write-OK "Web App '$WebAppName' created."
 
-$webAppUrl = "https://$($webApp.DefaultHostName)"
+# Re-fetch the Web App to get the correct DefaultHostName including Azure's unique suffix
+$webApp    = Get-AzWebApp -ResourceGroupName $ResourceGroupName -Name $WebAppName
+$webAppUrl = "https://" + $webApp.DefaultHostName
 Write-OK "Web App URL: $webAppUrl"
 
 # ============================================================
@@ -308,17 +311,13 @@ $proxyPhp  | Set-Content "$tempDir\proxy.php"  -Encoding UTF8
 
 Compress-Archive -Path "$tempDir\index.html","$tempDir\proxy.php" -DestinationPath $zipPath
 
-$kuduUrl  = "https://$WebAppName.scm.azurewebsites.net/api/zipdeploy"
-$kuduCred = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(
-    (Get-AzWebAppPublishingProfile -ResourceGroupName $ResourceGroupName -Name $WebAppName `
-        -OutputFile "$tempDir\profile.xml" | Out-Null)
-))
-
-# Use the Azure management API to deploy via ZIP (no Kudu credentials needed)
+# Deploy via Azure management API ZIP deploy
 $zipDeployUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$WebAppName/extensions/onedeploy?api-version=2022-03-01"
+$zipBytes     = [System.IO.File]::ReadAllBytes($zipPath)
 Invoke-RestMethod -Uri $zipDeployUrl -Method Put `
-    -Headers @{ Authorization = "Bearer $token"; "Content-Type" = "application/octet-stream" } `
-    -InFile $zipPath | Out-Null
+    -Headers @{ Authorization = "Bearer $token" } `
+    -ContentType "application/octet-stream" `
+    -Body $zipBytes | Out-Null
 
 Write-OK "index.html and proxy.php deployed to Web App."
 
@@ -387,33 +386,28 @@ Write-Step "OPT" "Creating Conditional Access Policy (MFA + Session Timeout)"
 # Retrieve the built-in MFA authentication strength policy ID
 $mfaStrengthId = (Get-MgPolicyAuthenticationStrengthPolicy | Where-Object { $_.DisplayName -eq "Multifactor authentication" }).Id
 
-$caPolicy = @{
-    displayName = "LAPS Portal - Require MFA and Session"
-    state       = "enabled"
-    conditions  = @{
-        users = @{
-            includeGroups = @($accessGroup.Id)
-        }
-        applications = @{
-            includeApplications = @($frontendClientId)
-        }
+$caPolicyParams = @{
+    DisplayName     = "LAPS Portal - Require MFA and Session"
+    State           = "enabled"
+    Conditions      = @{
+        Users        = @{ IncludeGroups = @($accessGroup.Id) }
+        Applications = @{ IncludeApplications = @($frontendClientId) }
     }
-    grantControls = @{
-        operator                          = "OR"
-        authenticationStrength            = @{ id = $mfaStrengthId }
+    GrantControls   = @{
+        Operator              = "OR"
+        AuthenticationStrength = @{ Id = $mfaStrengthId }
     }
-    sessionControls = @{
-        signInFrequency = @{
-            value              = 1
-            type               = "hours"
-            authenticationType = "primaryAndSecondaryAuthentication"
-            frequencyInterval  = "timeBased"
-            isEnabled          = $true
+    SessionControls = @{
+        SignInFrequency = @{
+            Value                  = 1
+            Type                   = "hours"
+            AuthenticationType     = "primaryAndSecondaryAuthentication"
+            FrequencyInterval      = "timeBased"
+            IsEnabled              = $true
         }
     }
-} | ConvertTo-Json -Depth 10
-
-New-MgIdentityConditionalAccessPolicy -BodyParameter (ConvertFrom-Json $caPolicy) | Out-Null
+}
+New-MgIdentityConditionalAccessPolicy @caPolicyParams | Out-Null
 Write-OK "Conditional Access policy created (MFA required, session timeout: 1 hour)."
 
 # ============================================================
