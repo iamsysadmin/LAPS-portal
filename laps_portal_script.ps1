@@ -226,7 +226,12 @@ $deployBody = @{
 
 # Helper function to always get a fresh token before each REST call
 function Get-FreshToken {
-    return (Get-AzAccessToken -ResourceUrl "https://management.azure.com/").Token
+    $t = Get-AzAccessToken -ResourceUrl "https://management.azure.com/"
+    if ($t.Token -is [System.Security.SecureString]) {
+        $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToGlobalAllocUnicode($t.Token)
+        return [System.Runtime.InteropServices.Marshal]::PtrToStringUni($ptr)
+    }
+    return $t.Token
 }
 $funcApiUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$FunctionAppName/functions/GetLapsPassword?api-version=2022-03-01"
 Invoke-RestMethod -Uri $funcApiUrl -Method Put `
@@ -246,11 +251,16 @@ Write-OK "Function URL retrieved."
 # ============================================================
 Write-Step 5 "Creating Web App"
 
-# Create the App Service Plan (Free F1 tier) for the Web App
-$asp = New-AzAppServicePlan -ResourceGroupName $ResourceGroupName `
-    -Name $AppServicePlanName -Location $Region `
-    -Tier Free -Linux
-Write-OK "App Service Plan '$AppServicePlanName' created."
+# Create the App Service Plan only if it does not exist yet
+$asp = Get-AzAppServicePlan -ResourceGroupName $ResourceGroupName -Name $AppServicePlanName -ErrorAction SilentlyContinue
+if (-not $asp) {
+    $asp = New-AzAppServicePlan -ResourceGroupName $ResourceGroupName `
+        -Name $AppServicePlanName -Location $Region `
+        -Tier Free -Linux
+    Write-OK "App Service Plan '$AppServicePlanName' created."
+} else {
+    Write-Info "App Service Plan '$AppServicePlanName' already exists, skipping."
+}
 
 # Create the Web App running PHP 8.5 on Linux
 $webApp = New-AzWebApp -ResourceGroupName $ResourceGroupName `
@@ -407,6 +417,10 @@ $caPolicyParams = @{
         }
     }
 }
+# Wait for the Service Principal to propagate in Entra ID before creating the CA policy
+Write-Info "Waiting 30 seconds for Service Principal to propagate..."
+Start-Sleep -Seconds 30
+
 New-MgIdentityConditionalAccessPolicy @caPolicyParams | Out-Null
 Write-OK "Conditional Access policy created (MFA required, session timeout: 1 hour)."
 
