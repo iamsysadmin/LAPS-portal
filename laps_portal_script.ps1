@@ -297,8 +297,7 @@ $redirectUri = "$webAppUrl/.auth/login/aad/callback"
 $frontendApp = Get-MgApplication -Filter "displayName eq '$FrontendAppRegName'" -ErrorAction SilentlyContinue
 if (-not $frontendApp) {
     $frontendApp = New-MgApplication -DisplayName $FrontendAppRegName `
-        -SignInAudience "AzureADMyOrg" `
-        -Web @{ RedirectUris = @($redirectUri); ImplicitGrantSettings = @{ EnableIdTokenIssuance = $true } }
+        -SignInAudience "AzureADMyOrg"
     Write-OK "Frontend app registration '$FrontendAppRegName' created."
 } else {
     Write-Info "Frontend app registration already exists, skipping."
@@ -315,9 +314,10 @@ if (-not $frontendSp) {
     Write-OK "Service Principal created for frontend app."
 }
 
-# Grant admin consent to suppress permission prompts for all tenant users
-$graphSpId2 = (Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'").Id
-Write-OK "Admin consent granted for frontend app."
+# Update the redirect URI now that we have the correct Web App URL
+Update-MgApplication -ApplicationId $frontendObjectId `
+    -Web @{ RedirectUris = @("$webAppUrl/.auth/login/aad/callback"); ImplicitGrantSettings = @{ EnableIdTokenIssuance = $true } }
+Write-OK "Redirect URI updated to: $webAppUrl/.auth/login/aad/callback"
 
 # ============================================================
 # STEP 7: Deploy Frontend Files
