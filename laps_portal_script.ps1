@@ -373,19 +373,23 @@ Write-Step 8 "Enabling App Service Authentication"
 $authSettings = @{
     properties = @{
         platform = @{
-            enabled = $true
+            enabled  = $true
+            runtimeVersion = "~1"
         }
         globalValidation = @{
-            requireAuthentication = $true
+            requireAuthentication       = $true
             unauthenticatedClientAction = "RedirectToLoginPage"
+        }
+        login = @{
+            tokenStore = @{ enabled = $true }
         }
         identityProviders = @{
             azureActiveDirectory = @{
-                enabled = $true
+                enabled      = $true
                 registration = @{
-                    clientId = $frontendClientId
-                    clientSecretSettingName = "MICROSOFT_PROVIDER_AUTHENTICATION_SECRET"
-                    openIdIssuer = "https://login.microsoftonline.com/$TenantId/v2.0"
+                    clientId                    = $frontendClientId
+                    clientSecretSettingName     = "MICROSOFT_PROVIDER_AUTHENTICATION_SECRET"
+                    openIdIssuer                = "https://login.microsoftonline.com/$TenantId/v2.0"
                 }
                 validation = @{
                     allowedAudiences = @("api://$frontendClientId")
