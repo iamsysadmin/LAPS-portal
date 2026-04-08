@@ -45,10 +45,13 @@ $TenantId       = $context.Tenant.Id
 Write-OK "Subscription ID : $SubscriptionId"
 Write-OK "Tenant ID       : $TenantId"
 
-# Microsoft Graph login must be done manually before running this script
-# Run this first in Cloud Shell:
+# NOTE: Before running this script, manually run the following command in Cloud Shell and complete the device login:
 # Connect-MgGraph -Scopes "Application.ReadWrite.All","Directory.ReadWrite.All","Policy.ReadWrite.ConditionalAccess" -UseDeviceAuthentication
 Write-Info "Using existing Microsoft Graph session..."
+if (-not (Get-MgContext)) {
+    Write-Host "  [ERROR] Not connected to Microsoft Graph. Please run Connect-MgGraph first!" -ForegroundColor Red
+    exit
+}
 
 Write-OK "Signed in successfully."
 
