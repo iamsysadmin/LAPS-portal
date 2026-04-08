@@ -45,13 +45,10 @@ $TenantId       = $context.Tenant.Id
 Write-OK "Subscription ID : $SubscriptionId"
 Write-OK "Tenant ID       : $TenantId"
 
-# Use device code flow to authenticate to Microsoft Graph (works in Azure Cloud Shell)
-Write-Info "Signing in to Microsoft Graph via device code..."
-Connect-MgGraph -TenantId $TenantId -Scopes `
-    "Application.ReadWrite.All",
-    "Directory.ReadWrite.All",
-    "Policy.ReadWrite.ConditionalAccess" `
-    -UseDeviceAuthentication | Out-Null
+# Microsoft Graph login must be done manually before running this script
+# Run this first in Cloud Shell:
+# Connect-MgGraph -Scopes "Application.ReadWrite.All","Directory.ReadWrite.All","Policy.ReadWrite.ConditionalAccess" -UseDeviceAuthentication
+Write-Info "Using existing Microsoft Graph session..."
 
 Write-OK "Signed in successfully."
 
