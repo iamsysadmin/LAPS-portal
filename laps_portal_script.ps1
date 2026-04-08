@@ -107,9 +107,12 @@ $backendClientSecret = $secretResult.SecretText
 Write-OK "Client secret created (expires in $SecretExpireDays days)."
 
 # Add required Microsoft Graph API permissions: Device.Read.All and DeviceLocalCredential.Read.All
-$graphSpId    = (Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'").Id
-$deviceRead   = "7438b122-aefc-4978-80ed-43db9964efb" # Device.Read.All
-$lapsRead     = "db51be59-e728-414b-b800-e0f010df1a79" # DeviceLocalCredential.Read.All
+$graphSp      = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
+$graphSpId    = $graphSp.Id
+
+# Retrieve the correct permission IDs dynamically from the Graph service principal
+$deviceRead   = ($graphSp.AppRoles | Where-Object { $_.Value -eq "Device.Read.All" }).Id
+$lapsRead     = ($graphSp.AppRoles | Where-Object { $_.Value -eq "DeviceLocalCredential.Read.All" }).Id
 
 Update-MgApplication -ApplicationId $backendObjectId -RequiredResourceAccess @(
     @{
@@ -167,18 +170,10 @@ Write-OK "Workspace ID: $lawWorkspaceId"
 # ============================================================
 Write-Step 4 "Creating Azure Function App"
 
-$storageAccountName = ("lapsstor" + -join ((97..122) | Get-Random -Count 8 | ForEach-Object { [char]$_ }))
-
-# Create a storage account required by the Function App (Consumption plan)
-$storage = New-AzStorageAccount -ResourceGroupName $ResourceGroupName `
-    -Name $storageAccountName -Location $Region `
-    -SkuName Standard_LRS -Kind StorageV2
-Write-OK "Storage account '$storageAccountName' created."
-
 # Create the Function App on a Consumption (serverless) plan running PowerShell Core 7.4
+# Azure automatically creates and manages the required storage account
 $funcApp = New-AzFunctionApp -ResourceGroupName $ResourceGroupName `
     -Name $FunctionAppName -Location $Region `
-    -StorageAccountName $storageAccountName `
     -Runtime PowerShell -RuntimeVersion 7.4 `
     -FunctionsVersion 4 -OSType Windows
 Write-OK "Function App '$FunctionAppName' created."
@@ -224,17 +219,16 @@ $deployBody = @{
     }
 } | ConvertTo-Json -Depth 10
 
-$token      = (Get-AzAccessToken).Token
+$token      = (Get-AzAccessToken -ResourceUrl "https://management.azure.com/").Token
+$authHeader = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
 $funcApiUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$FunctionAppName/functions/GetLapsPassword?api-version=2022-03-01"
 
-Invoke-RestMethod -Uri $funcApiUrl -Method Put -Headers @{ Authorization = "Bearer $token" } `
-    -ContentType "application/json" -Body $deployBody | Out-Null
+Invoke-RestMethod -Uri $funcApiUrl -Method Put -Headers $authHeader -Body $deployBody | Out-Null
 Write-OK "Function 'GetLapsPassword' deployed."
 
 # Retrieve the function URL including the function key (used as FUNCTION_URL in the Web App)
 $funcKeyUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$FunctionAppName/functions/GetLapsPassword/listKeys?api-version=2022-03-01"
-$funcKey    = (Invoke-RestMethod -Uri $funcKeyUrl -Method Post `
-    -Headers @{ Authorization = "Bearer $token" }).default
+$funcKey    = (Invoke-RestMethod -Uri $funcKeyUrl -Method Post -Headers $authHeader).default
 $functionUrl = "https://$FunctionAppName.azurewebsites.net/api/GetLapsPassword?code=$funcKey"
 Write-OK "Function URL retrieved."
 
