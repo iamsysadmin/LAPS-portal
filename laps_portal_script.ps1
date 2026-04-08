@@ -322,7 +322,7 @@ Invoke-WebRequest -Uri $ProxyPhpUrl  -OutFile (Join-Path $tempDir "proxy.php")  
 Compress-Archive -Path (Join-Path $tempDir "index.html"), (Join-Path $tempDir "proxy.php") `
     -DestinationPath $zipPath -Force
 
-$zipDeployUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$WebAppName/extensions/onedeploy?api-version=2022-03-01"
+$zipDeployUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$WebAppName/extensions/onedeploy?api-version=2022-03-01&type=zip&path=site/wwwroot"
 $zipBytes     = [System.IO.File]::ReadAllBytes($zipPath)
 Invoke-RestMethod -Uri $zipDeployUrl -Method Put `
     -Headers @{ Authorization = "Bearer $(Get-FreshToken)" } `
@@ -440,6 +440,10 @@ Write-Host "  Next steps:"
 Write-Host "  1. Add users to the '$AccessGroupName' group in Entra ID"
 Write-Host "  3. Check audit logs in Log Analytics (allow up to 30 min for first entry)"
 Write-Host ""
+
+# Re-fetch the Web App one final time to ensure the correct URL with Azure's unique suffix
+$webAppFinal = Get-AzWebApp -ResourceGroupName $ResourceGroupName -Name $WebAppName
+$webAppUrl   = "https://" + $webAppFinal.DefaultHostName
 
 # Display the portal URL prominently so it is easy to find and share
 Write-Host "======================================================" -ForegroundColor Green
