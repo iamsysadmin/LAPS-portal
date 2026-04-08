@@ -224,17 +224,20 @@ $deployBody = @{
     }
 } | ConvertTo-Json -Depth 10
 
-$tokenObj   = Get-AzAccessToken -ResourceUrl "https://management.azure.com/"
-$token      = $tokenObj.Token
-$authHeader = @{ Authorization = "Bearer $token"; "Content-Type" = "application/json" }
+# Helper function to always get a fresh token before each REST call
+function Get-FreshToken {
+    return (Get-AzAccessToken -ResourceUrl "https://management.azure.com/").Token
+}
 $funcApiUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$FunctionAppName/functions/GetLapsPassword?api-version=2022-03-01"
-
-Invoke-RestMethod -Uri $funcApiUrl -Method Put -Headers $authHeader -Body $deployBody | Out-Null
+Invoke-RestMethod -Uri $funcApiUrl -Method Put `
+    -Headers @{ Authorization = "Bearer $(Get-FreshToken)"; "Content-Type" = "application/json" } `
+    -Body $deployBody | Out-Null
 Write-OK "Function 'GetLapsPassword' deployed."
 
 # Retrieve the function URL including the function key (used as FUNCTION_URL in the Web App)
 $funcKeyUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$FunctionAppName/functions/GetLapsPassword/listKeys?api-version=2022-03-01"
-$funcKey    = (Invoke-RestMethod -Uri $funcKeyUrl -Method Post -Headers $authHeader).default
+$funcKey    = (Invoke-RestMethod -Uri $funcKeyUrl -Method Post `
+    -Headers @{ Authorization = "Bearer $(Get-FreshToken)"; "Content-Type" = "application/json" }).default
 $functionUrl = "https://$FunctionAppName.azurewebsites.net/api/GetLapsPassword?code=$funcKey"
 Write-OK "Function URL retrieved."
 
@@ -298,24 +301,21 @@ Write-OK "Admin consent granted for frontend app."
 # ============================================================
 Write-Step 7 "Deploying Frontend Files from GitHub"
 
-# Download index.html and proxy.php from GitHub
-$indexHtml = Invoke-RestMethod -Uri $IndexHtmlUrl
-$proxyPhp  = Invoke-RestMethod -Uri $ProxyPhpUrl
+# Download index.html and proxy.php from GitHub and deploy via ZIP
+$tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
+$zipPath = Join-Path $tempDir "deploy.zip"
 
-# Deploy files to the Web App using the Kudu ZIP deploy API
-$tempDir  = New-Item -ItemType Directory -Path ([System.IO.Path]::GetTempPath() + [System.Guid]::NewGuid())
-$zipPath  = "$tempDir\deploy.zip"
+Invoke-WebRequest -Uri $IndexHtmlUrl -OutFile (Join-Path $tempDir "index.html") -UseBasicParsing
+Invoke-WebRequest -Uri $ProxyPhpUrl  -OutFile (Join-Path $tempDir "proxy.php")  -UseBasicParsing
 
-$indexHtml | Set-Content "$tempDir\index.html" -Encoding UTF8
-$proxyPhp  | Set-Content "$tempDir\proxy.php"  -Encoding UTF8
+Compress-Archive -Path (Join-Path $tempDir "index.html"), (Join-Path $tempDir "proxy.php") `
+    -DestinationPath $zipPath -Force
 
-Compress-Archive -Path "$tempDir\index.html","$tempDir\proxy.php" -DestinationPath $zipPath
-
-# Deploy via Azure management API ZIP deploy
 $zipDeployUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$WebAppName/extensions/onedeploy?api-version=2022-03-01"
 $zipBytes     = [System.IO.File]::ReadAllBytes($zipPath)
 Invoke-RestMethod -Uri $zipDeployUrl -Method Put `
-    -Headers @{ Authorization = "Bearer $token" } `
+    -Headers @{ Authorization = "Bearer $(Get-FreshToken)" } `
     -ContentType "application/octet-stream" `
     -Body $zipBytes | Out-Null
 
@@ -346,8 +346,8 @@ $authSettings = @{
 
 $authUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$WebAppName/config/authsettingsV2?api-version=2022-03-01"
 Invoke-RestMethod -Uri $authUrl -Method Put `
-    -Headers @{ Authorization = "Bearer $token" } `
-    -ContentType "application/json" -Body $authSettings | Out-Null
+    -Headers @{ Authorization = "Bearer $(Get-FreshToken)"; "Content-Type" = "application/json" } `
+    -Body $authSettings | Out-Null
 Write-OK "App Service Authentication enabled."
 
 # ============================================================
