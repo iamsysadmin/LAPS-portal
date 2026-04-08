@@ -34,9 +34,10 @@ Write-OK "Tenant ID       : $TenantId"
 $Region                 = "westeurope"
 $ResourceGroupName      = "rg-laps-data-portal"
 $LawName                = "law-laps-data-portal"
-$FunctionAppName        = "laps-graph-portal"          # must be globally unique
-$WebAppName             = "laps-data-portal"           # must be globally unique
-$AppServicePlanName     = "ASP-lapsportal" + -join ((97..122) | Get-Random -Count 4 | ForEach-Object { [char]$_ })
+$randomSuffix           = -join ((97..122) | Get-Random -Count 6 | ForEach-Object { [char]$_ })
+$FunctionAppName        = "laps-graph-$randomSuffix"   # must be globally unique
+$WebAppName             = "laps-portal-$randomSuffix"  # must be globally unique
+$AppServicePlanName     = "ASP-lapsportal-$randomSuffix"
 $BackendAppRegName      = "View Laps data"
 $FrontendAppRegName     = "LAPS-Portal-frontend"
 $SecretDescription      = "LAPS-data-secret"
