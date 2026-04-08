@@ -266,7 +266,19 @@ if (-not $asp) {
 $webApp = New-AzWebApp -ResourceGroupName $ResourceGroupName `
     -Name $WebAppName -AppServicePlan $AppServicePlanName `
     -Location $Region
-Write-OK "Web App '$WebAppName' created."
+
+# Set PHP 8.5 as the runtime stack (required to match blog configuration and get correct Azure URL)
+$webAppConfig = @{
+    properties = @{
+        linuxFxVersion = "PHP|8.5"
+    }
+} | ConvertTo-Json
+
+Invoke-RestMethod -Uri "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$WebAppName/config/web?api-version=2022-03-01" `
+    -Method Patch `
+    -Headers @{ Authorization = "Bearer $(Get-FreshToken)"; "Content-Type" = "application/json" } `
+    -Body $webAppConfig | Out-Null
+Write-OK "Web App '$WebAppName' created with PHP 8.5."
 
 # Re-fetch the Web App to get the correct DefaultHostName including Azure's unique suffix
 $webApp    = Get-AzWebApp -ResourceGroupName $ResourceGroupName -Name $WebAppName
