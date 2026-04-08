@@ -441,9 +441,11 @@ Write-Host "  1. Add users to the '$AccessGroupName' group in Entra ID"
 Write-Host "  3. Check audit logs in Log Analytics (allow up to 30 min for first entry)"
 Write-Host ""
 
-# Re-fetch the Web App one final time to ensure the correct URL with Azure's unique suffix
-$webAppFinal = Get-AzWebApp -ResourceGroupName $ResourceGroupName -Name $WebAppName
-$webAppUrl   = "https://" + $webAppFinal.DefaultHostName
+# Fetch the correct Web App URL directly via REST API to get the full hostname including Azure's unique suffix
+$webAppApiUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$WebAppName?api-version=2022-03-01"
+$webAppDetails = Invoke-RestMethod -Uri $webAppApiUrl -Method Get `
+    -Headers @{ Authorization = "Bearer $(Get-FreshToken)" }
+$webAppUrl = "https://" + $webAppDetails.properties.defaultHostName
 
 # Display the portal URL prominently so it is easy to find and share
 Write-Host "======================================================" -ForegroundColor Green
