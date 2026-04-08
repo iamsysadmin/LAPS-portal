@@ -36,7 +36,7 @@ $ResourceGroupName      = "rg-laps-data-portal"
 $LawName                = "law-laps-data-portal"
 $FunctionAppName        = "laps-graph-portal"          # must be globally unique
 $WebAppName             = "laps-data-portal"           # must be globally unique
-$AppServicePlanName     = "ASP-LAPS-" + -join ((97..122) | Get-Random -Count 6 | ForEach-Object { [char]$_ })
+$AppServicePlanName     = "ASP-lapsportal" + -join ((97..122) | Get-Random -Count 4 | ForEach-Object { [char]$_ })
 $BackendAppRegName      = "View Laps data"
 $FrontendAppRegName     = "LAPS-Portal-frontend"
 $SecretDescription      = "LAPS-data-secret"
@@ -270,7 +270,7 @@ $webApp = New-AzWebApp -ResourceGroupName $ResourceGroupName `
 # Set PHP 8.5 as the runtime stack (required to match blog configuration and get correct Azure URL)
 $webAppConfig = @{
     properties = @{
-        linuxFxVersion = "PHP|8.5"
+        linuxFxVersion = "PHP|8.4"
     }
 } | ConvertTo-Json
 
