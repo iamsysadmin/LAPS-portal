@@ -170,10 +170,15 @@ Write-OK "Workspace ID: $lawWorkspaceId"
 # ============================================================
 Write-Step 4 "Creating Azure Function App"
 
+# Create a storage account (required by New-AzFunctionApp, created silently in the background)
+$storageAccountName = ("lapsstor" + -join ((97..122) | Get-Random -Count 8 | ForEach-Object { [char]$_ }))
+New-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $storageAccountName `
+    -Location $Region -SkuName Standard_LRS -Kind StorageV2 | Out-Null
+
 # Create the Function App on a Consumption (serverless) plan running PowerShell Core 7.4
-# Azure automatically creates and manages the required storage account
 $funcApp = New-AzFunctionApp -ResourceGroupName $ResourceGroupName `
     -Name $FunctionAppName -Location $Region `
+    -StorageAccountName $storageAccountName `
     -Runtime PowerShell -RuntimeVersion 7.4 `
     -FunctionsVersion 4 -OSType Windows
 Write-OK "Function App '$FunctionAppName' created."
