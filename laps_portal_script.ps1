@@ -314,6 +314,15 @@ if (-not $frontendSp) {
     Write-OK "Service Principal created for frontend app."
 }
 
+# Create a client secret for the frontend app (needed for App Service Authentication)
+$frontendSecretExpiry = (Get-Date).AddDays($SecretExpireDays).ToString("yyyy-MM-ddTHH:mm:ssZ")
+$frontendSecret = Add-MgApplicationPassword -ApplicationId $frontendObjectId -PasswordCredential @{
+    DisplayName = "AppServiceAuth"
+    EndDateTime = $frontendSecretExpiry
+}
+$frontendClientSecret = $frontendSecret.SecretText
+Write-OK "Frontend client secret created."
+
 # Update the redirect URI now that we have the correct Web App URL
 Update-MgApplication -ApplicationId $frontendObjectId `
     -Web @{ RedirectUris = @("$webAppUrl/.auth/login/aad/callback"); ImplicitGrantSettings = @{ EnableIdTokenIssuance = $true } }
@@ -347,7 +356,10 @@ Write-OK "index.html and proxy.php deployed to Web App."
 
 # Add FUNCTION_URL as an environment variable so proxy.php can call the Function securely
 Set-AzWebApp -ResourceGroupName $ResourceGroupName -Name $WebAppName `
-    -AppSettings @{ FUNCTION_URL = $functionUrl } | Out-Null
+    -AppSettings @{ 
+        FUNCTION_URL = $functionUrl
+        MICROSOFT_PROVIDER_AUTHENTICATION_SECRET = $frontendClientSecret
+    } | Out-Null
 Write-OK "FUNCTION_URL environment variable set on Web App."
 
 Remove-Item $tempDir -Recurse -Force
@@ -357,16 +369,31 @@ Remove-Item $tempDir -Recurse -Force
 # ============================================================
 Write-Step 8 "Enabling App Service Authentication"
 
-# Configure Microsoft as the identity provider using the frontend app registration
+# Configure App Service Authentication with Microsoft identity provider
 $authSettings = @{
     properties = @{
-        enabled                   = $true
-        unauthenticatedClientAction = "RedirectToLoginPage"
-        defaultProvider           = "AzureActiveDirectory"
-        clientId                  = $frontendClientId
-        issuer                    = "https://login.microsoftonline.com/$TenantId/v2.0"
+        platform = @{
+            enabled = $true
+        }
+        globalValidation = @{
+            requireAuthentication = $true
+            unauthenticatedClientAction = "RedirectToLoginPage"
+        }
+        identityProviders = @{
+            azureActiveDirectory = @{
+                enabled = $true
+                registration = @{
+                    clientId = $frontendClientId
+                    clientSecretSettingName = "MICROSOFT_PROVIDER_AUTHENTICATION_SECRET"
+                    openIdIssuer = "https://login.microsoftonline.com/$TenantId/v2.0"
+                }
+                validation = @{
+                    allowedAudiences = @("api://$frontendClientId")
+                }
+            }
+        }
     }
-} | ConvertTo-Json -Depth 5
+} | ConvertTo-Json -Depth 10
 
 $authUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$WebAppName/config/authsettingsV2?api-version=2022-03-01"
 Invoke-RestMethod -Uri $authUrl -Method Put `
