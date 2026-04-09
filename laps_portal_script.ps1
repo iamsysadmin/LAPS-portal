@@ -23,7 +23,14 @@
 #>
 
 # ============================================================
-# CONFIGURATION — update these values for your environment
+# HELPER FUNCTIONS
+# ============================================================
+function Write-Step { param($n, $msg) Write-Host "`n========== STEP ${n}: $msg ==========" -ForegroundColor Cyan }
+function Write-OK   { param($msg)     Write-Host "  [OK] $msg" -ForegroundColor Green }
+function Write-Info { param($msg)     Write-Host "  [INFO] $msg" -ForegroundColor Yellow }
+
+# ============================================================
+# CONFIGURATION
 # ============================================================
 # In Azure Cloud Shell you are already logged in — just retrieve the context
 $context        = Get-AzContext
@@ -176,12 +183,27 @@ $storageAccountName = ("lapsstor" + -join ((97..122) | Get-Random -Count 8 | For
 New-AzStorageAccount -ResourceGroupName $ResourceGroupName -Name $storageAccountName `
     -Location $Region -SkuName Standard_LRS -Kind StorageV2 | Out-Null
 
-# Create the Function App on a Consumption (serverless) plan running PowerShell Core 7.4
-$funcApp = New-AzFunctionApp -ResourceGroupName $ResourceGroupName `
-    -Name $FunctionAppName -Location $Region `
-    -StorageAccountName $storageAccountName `
-    -Runtime PowerShell -RuntimeVersion 7.4 `
-    -FunctionsVersion 4 -OSType Windows
+# Create the Function App with retry logic (Azure sometimes times out on first attempt)
+$funcApp = $null
+$attempts = 0
+while (-not $funcApp -and $attempts -lt 3) {
+    $attempts++
+    try {
+        $funcApp = New-AzFunctionApp -ResourceGroupName $ResourceGroupName `
+            -Name $FunctionAppName -Location $Region `
+            -StorageAccountName $storageAccountName `
+            -Runtime PowerShell -RuntimeVersion 7.4 `
+            -FunctionsVersion 4 -OSType Windows
+    } catch {
+        Write-Info "Attempt $attempts failed, retrying in 30 seconds..."
+        Start-Sleep -Seconds 30
+    }
+}
+if (-not $funcApp) {
+    # Check if it was created despite the timeout
+    $funcApp = Get-AzFunctionApp -ResourceGroupName $ResourceGroupName -Name $FunctionAppName -ErrorAction SilentlyContinue
+}
+if (-not $funcApp) { Write-Host "  [ERROR] Function App could not be created." -ForegroundColor Red; exit }
 Write-OK "Function App '$FunctionAppName' created."
 
 # Set environment variables used by the function to authenticate to Graph and write to Log Analytics
