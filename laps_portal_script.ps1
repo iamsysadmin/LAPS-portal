@@ -350,6 +350,26 @@ Update-MgApplication -ApplicationId $frontendObjectId `
     -Web @{ RedirectUris = @("$webAppUrl/.auth/login/aad/callback"); ImplicitGrantSettings = @{ EnableIdTokenIssuance = $true } }
 Write-OK "Redirect URI updated to: $webAppUrl/.auth/login/aad/callback"
 
+# Grant admin consent for all users in the tenant
+$graphSpId2 = (Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'").Id
+
+try {
+    $existingGrant = Get-MgOauth2PermissionGrant -Filter "clientId eq '$($frontendSp.Id)' and consentType eq 'AllPrincipals'" -ErrorAction SilentlyContinue
+    if ($existingGrant) {
+        Update-MgOauth2PermissionGrant -OAuth2PermissionGrantId $existingGrant.Id `
+            -Scope "openid profile User.Read offline_access" | Out-Null
+        Write-OK "Admin consent updated for all users in tenant."
+    } else {
+        New-MgOauth2PermissionGrant -ClientId $frontendSp.Id `
+            -ConsentType "AllPrincipals" `
+            -ResourceId $graphSpId2 `
+            -Scope "openid profile User.Read offline_access" | Out-Null
+        Write-OK "Admin consent granted for all users in tenant."
+    }
+} catch {
+    Write-Host "  [WARNING] Could not grant admin consent: $_" -ForegroundColor Yellow
+}
+
 # ============================================================
 # STEP 7: Deploy Frontend Files
 # ============================================================
