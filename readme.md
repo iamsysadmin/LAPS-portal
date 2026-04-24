@@ -105,7 +105,7 @@ Browse to the URL shown at the end of the script output. Sign in with your Micro
 
 > **Note:** The first load may take a few seconds as the Free F1 plan wakes up after inactivity.
 
-![LAPS Portal](images/portal.jpg)
+![LAPS Portal](https://raw.githubusercontent.com/iamsysadmin/Images/main/portal.JPG)
 
 ---
 
