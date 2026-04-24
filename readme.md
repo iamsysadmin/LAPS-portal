@@ -2,7 +2,7 @@
 
 A secure, mobile-friendly web portal for retrieving Local Administrator Password Solution (LAPS) credentials from Microsoft Intune/Entra ID — without needing access to the Intune or Azure portal.
 
-![LAPS Portal](https://raw.githubusercontent.com/iamsysadmin/Images/main/portal.JPG)
+![LAPS Portal](https://raw.githubusercontent.com/iamsysadmin/Images/main/portal2.JPG)
 
 Retrieving a LAPS password the traditional way requires logging into the Intune portal, navigating to the devices tab, searching for the device, and digging through properties to find the password — every single time. That had to be faster.
 
