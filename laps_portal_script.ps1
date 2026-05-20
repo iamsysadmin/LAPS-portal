@@ -71,7 +71,7 @@ Write-Host "`nLAPS Portal - Full Installation Script" -ForegroundColor Magenta
 Write-Host "=======================================" -ForegroundColor Magenta
 
 # NOTE: Before running this script, manually run the following command in Cloud Shell and complete the device login:
-# Connect-MgGraph -Scopes "Application.ReadWrite.All","Directory.ReadWrite.All","AppRoleAssignment.ReadWrite.All","Policy.ReadWrite.ConditionalAccess","Policy.Read.All" -UseDeviceAuthentication
+# Connect-MgGraph -Scopes "Application.ReadWrite.All","Directory.ReadWrite.All","AppRoleAssignment.ReadWrite.All","Policy.ReadWrite.ConditionalAccess","Policy.Read.All","RoleManagement.ReadWrite.Directory" -UseDeviceAuthentication
 Write-Info "Using existing Microsoft Graph session..."
 if (-not (Get-MgContext)) {
     Write-Host "  [ERROR] Not connected to Microsoft Graph. Please run Connect-MgGraph first!" -ForegroundColor Red
@@ -412,15 +412,30 @@ Write-Step 8 "Restricting Access to Entra ID Group"
 
 # Create the Entra ID security group if it does not exist yet
 # Create the Entra ID security group with IsAssignableToRole enabled (required for PIM)
+# Note: requires Privileged Role Administrator or Global Administrator role
 $accessGroup = Get-MgGroup -Filter "displayName eq '$AccessGroupName'" -ErrorAction SilentlyContinue
 if (-not $accessGroup) {
-    $accessGroup = New-MgGroup -DisplayName $AccessGroupName `
-        -MailEnabled:$false -SecurityEnabled:$true `
-        -MailNickname ($AccessGroupName -replace '\s','') `
-        -IsAssignableToRole:$true
-    Write-OK "Entra ID group '$AccessGroupName' created (PIM-enabled)."
+    try {
+        $accessGroup = New-MgGroup -DisplayName $AccessGroupName `
+            -MailEnabled:$false -SecurityEnabled:$true `
+            -MailNickname ($AccessGroupName -replace '\s','') `
+            -IsAssignableToRole:$true
+        Write-OK "Entra ID group '$AccessGroupName' created (PIM-enabled)."
+    } catch {
+        Write-Info "Could not create PIM-enabled group (requires Privileged Role Administrator). Creating regular group instead..."
+        $accessGroup = New-MgGroup -DisplayName $AccessGroupName `
+            -MailEnabled:$false -SecurityEnabled:$true `
+            -MailNickname ($AccessGroupName -replace '\s','')
+        Write-OK "Entra ID group '$AccessGroupName' created (PIM not enabled — add IsAssignableToRole manually if needed)."
+    }
 } else {
     Write-Info "Entra ID group '$AccessGroupName' already exists, skipping."
+}
+
+# Verify group was created successfully before proceeding
+if (-not $accessGroup -or -not $accessGroup.Id) {
+    Write-Host "  [ERROR] Could not create or find group '$AccessGroupName'." -ForegroundColor Red
+    exit
 }
 
 # Require group assignment on the frontend Enterprise Application
