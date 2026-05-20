@@ -81,69 +81,9 @@ if (-not (Get-MgContext)) {
 Write-OK "Signed in successfully."
 
 # ============================================================
-# STEP 1: Create Backend App Registration
+# STEP 1: Create Resource Group (Managed Identity — no backend App Registration needed)
 # ============================================================
-Write-Step 1 "Creating Backend App Registration"
-
-$backendApp = Get-MgApplication -Filter "displayName eq '$BackendAppRegName'" -ErrorAction SilentlyContinue
-if (-not $backendApp) {
-    $backendApp = New-MgApplication -DisplayName $BackendAppRegName `
-        -SignInAudience "AzureADMyOrg"
-    Write-OK "App registration '$BackendAppRegName' created."
-} else {
-    Write-Info "App registration '$BackendAppRegName' already exists, skipping."
-}
-
-$backendClientId = $backendApp.AppId
-$backendObjectId = $backendApp.Id
-Write-OK "Backend Client ID: $backendClientId"
-
-# Create service principal for the backend app registration
-$backendSp = Get-MgServicePrincipal -Filter "appId eq '$backendClientId'" -ErrorAction SilentlyContinue
-if (-not $backendSp) {
-    $backendSp = New-MgServicePrincipal -AppId $backendClientId
-    Write-OK "Service Principal created for backend app."
-}
-
-# Create client secret
-$secretExpiry = (Get-Date).AddDays($SecretExpireDays).ToString("yyyy-MM-ddTHH:mm:ssZ")
-$secretResult = Add-MgApplicationPassword -ApplicationId $backendObjectId -PasswordCredential @{
-    DisplayName = $SecretDescription
-    EndDateTime = $secretExpiry
-}
-$backendClientSecret = $secretResult.SecretText
-Write-OK "Client secret created (expires in $SecretExpireDays days)."
-
-# Add required Microsoft Graph API permissions: Device.Read.All and DeviceLocalCredential.Read.All
-$graphSp      = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
-$graphSpId    = $graphSp.Id
-
-# Retrieve the correct permission IDs dynamically from the Graph service principal
-$deviceRead   = ($graphSp.AppRoles | Where-Object { $_.Value -eq "Device.Read.All" }).Id
-$lapsRead     = ($graphSp.AppRoles | Where-Object { $_.Value -eq "DeviceLocalCredential.Read.All" }).Id
-
-Update-MgApplication -ApplicationId $backendObjectId -RequiredResourceAccess @(
-    @{
-        ResourceAppId  = "00000003-0000-0000-c000-000000000000"
-        ResourceAccess = @(
-            @{ Id = $deviceRead; Type = "Role" },
-            @{ Id = $lapsRead;   Type = "Role" }
-        )
-    }
-)
-
-# Grant admin consent for the required permissions
-New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $backendSp.Id `
-    -PrincipalId $backendSp.Id -ResourceId $graphSpId -AppRoleId $deviceRead | Out-Null
-New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $backendSp.Id `
-    -PrincipalId $backendSp.Id -ResourceId $graphSpId -AppRoleId $lapsRead | Out-Null
-
-Write-OK "Graph API permissions granted with admin consent."
-
-# ============================================================
-# STEP 2: Create Resource Group
-# ============================================================
-Write-Step 2 "Creating Resource Group"
+Write-Step 1 "Creating Resource Group"
 
 $rg = Get-AzResourceGroup -Name $ResourceGroupName -ErrorAction SilentlyContinue
 if (-not $rg) {
@@ -156,7 +96,7 @@ if (-not $rg) {
 # ============================================================
 # STEP 3: Create Log Analytics Workspace
 # ============================================================
-Write-Step 3 "Creating Log Analytics Workspace"
+Write-Step 2 "Creating Log Analytics Workspace"
 
 $law = Get-AzOperationalInsightsWorkspace -ResourceGroupName $ResourceGroupName -Name $LawName -ErrorAction SilentlyContinue
 if (-not $law) {
@@ -176,7 +116,7 @@ Write-OK "Workspace ID: $lawWorkspaceId"
 # ============================================================
 # STEP 4: Create Azure Function App
 # ============================================================
-Write-Step 4 "Creating Azure Function App"
+Write-Step 3 "Creating Azure Function App"
 
 # Create a storage account (required by New-AzFunctionApp, created silently in the background)
 $storageAccountName = ("lapsstor" + -join ((97..122) | Get-Random -Count 8 | ForEach-Object { [char]$_ }))
@@ -206,13 +146,31 @@ if (-not $funcApp) {
 if (-not $funcApp) { Write-Host "  [ERROR] Function App could not be created." -ForegroundColor Red; exit }
 Write-OK "Function App '$FunctionAppName' created."
 
-# Set environment variables used by the function to authenticate to Graph and write to Log Analytics
+# Enable System-assigned Managed Identity on the Function App
+$miUrl = "https://management.azure.com/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.Web/sites/$FunctionAppName?api-version=2022-03-01"
+$miBody = @{ identity = @{ type = "SystemAssigned" } } | ConvertTo-Json
+$miResult = Invoke-RestMethod -Uri $miUrl -Method Patch `
+    -Headers @{ Authorization = "Bearer $(Get-FreshToken)"; "Content-Type" = "application/json" } `
+    -Body $miBody
+$managedIdentityObjectId = $miResult.identity.principalId
+Write-OK "Managed Identity enabled. Object ID: $managedIdentityObjectId"
+
+# Grant Graph API permissions to the Managed Identity
+$graphSp    = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
+$deviceRead = ($graphSp.AppRoles | Where-Object { $_.Value -eq "Device.Read.All" }).Id
+$lapsRead   = ($graphSp.AppRoles | Where-Object { $_.Value -eq "DeviceLocalCredential.Read.All" }).Id
+
+New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $managedIdentityObjectId `
+    -PrincipalId $managedIdentityObjectId -ResourceId $graphSp.Id -AppRoleId $deviceRead | Out-Null
+New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $managedIdentityObjectId `
+    -PrincipalId $managedIdentityObjectId -ResourceId $graphSp.Id -AppRoleId $lapsRead | Out-Null
+Write-OK "Graph API permissions granted to Managed Identity."
+
+# Set environment variables — no client secret needed with Managed Identity
 $funcSettings = @{
-    LAPS_TENANT_ID    = $TenantId
-    LAPS_CLIENT_ID    = $backendClientId
-    LAPS_CLIENT_SECRET= $backendClientSecret
-    LAW_WORKSPACE_ID  = $lawWorkspaceId
-    LAW_PRIMARY_KEY   = $lawPrimaryKey
+    LAPS_TENANT_ID   = $TenantId
+    LAW_WORKSPACE_ID = $lawWorkspaceId
+    LAW_PRIMARY_KEY  = $lawPrimaryKey
 }
 Update-AzFunctionAppSetting -ResourceGroupName $ResourceGroupName `
     -Name $FunctionAppName -AppSetting $funcSettings | Out-Null
@@ -272,7 +230,7 @@ Write-OK "Function URL retrieved."
 # ============================================================
 # STEP 5: Create Web App
 # ============================================================
-Write-Step 5 "Creating Web App"
+Write-Step 4 "Creating Web App"
 
 # Create the App Service Plan only if it does not exist yet (check across entire subscription)
 $asp = Get-AzAppServicePlan -Name $AppServicePlanName -ErrorAction SilentlyContinue
@@ -311,7 +269,7 @@ Write-OK "Web App URL: $webAppUrl"
 # ============================================================
 # STEP 6: Create Frontend App Registration
 # ============================================================
-Write-Step 6 "Creating Frontend App Registration"
+Write-Step 5 "Creating Frontend App Registration"
 
 # The redirect URI must match the Web App URL for the authentication callback to work
 $redirectUri = "$webAppUrl/.auth/login/aad/callback"
@@ -373,7 +331,7 @@ try {
 # ============================================================
 # STEP 7: Deploy Frontend Files
 # ============================================================
-Write-Step 7 "Deploying Frontend Files from GitHub"
+Write-Step 6 "Deploying Frontend Files from GitHub"
 
 # Download index.html and proxy.php from GitHub and deploy via ZIP
 $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
@@ -409,7 +367,7 @@ Remove-Item $tempDir -Recurse -Force
 # ============================================================
 # STEP 8: Enable App Service Authentication
 # ============================================================
-Write-Step 8 "Enabling App Service Authentication"
+Write-Step 7 "Enabling App Service Authentication"
 
 # Configure App Service Authentication with Microsoft identity provider
 $authSettings = @{
@@ -450,15 +408,17 @@ Write-OK "App Service Authentication enabled."
 # ============================================================
 # STEP 9: Restrict Access to Specific Users via Entra ID Group
 # ============================================================
-Write-Step 9 "Restricting Access to Entra ID Group"
+Write-Step 8 "Restricting Access to Entra ID Group"
 
 # Create the Entra ID security group if it does not exist yet
+# Create the Entra ID security group with IsAssignableToRole enabled (required for PIM)
 $accessGroup = Get-MgGroup -Filter "displayName eq '$AccessGroupName'" -ErrorAction SilentlyContinue
 if (-not $accessGroup) {
     $accessGroup = New-MgGroup -DisplayName $AccessGroupName `
         -MailEnabled:$false -SecurityEnabled:$true `
-        -MailNickname ($AccessGroupName -replace '\s','')
-    Write-OK "Entra ID group '$AccessGroupName' created."
+        -MailNickname ($AccessGroupName -replace '\s','') `
+        -IsAssignableToRole:$true
+    Write-OK "Entra ID group '$AccessGroupName' created (PIM-enabled)."
 } else {
     Write-Info "Entra ID group '$AccessGroupName' already exists, skipping."
 }
